@@ -19,7 +19,7 @@ function updateTextAreaSize(textArea?: HTMLTextAreaElement) {
 export function NewTweetForm() {
   const session = useSession();
   if (session.status !== "authenticated") {
-    return;
+    return null;
   }
   return <Form />;
 }
@@ -40,7 +40,6 @@ function Form() {
 
   const createTweet = api.tweet.create.useMutation({
     onSuccess: (newTweet) => {
-      console.log(newTweet);
       setInputValue("");
     },
   });
@@ -51,7 +50,7 @@ function Form() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    createTweet.mutate({ content: inputValue });
+    createTweet.mutate({ text: inputValue });
   }
 
   return (
