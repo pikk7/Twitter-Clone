@@ -4,6 +4,9 @@ import InfiniteScroll from "react-infinite-scroll-component";
 import { ProfileImage } from "./ProfileImage";
 import { useSession } from "next-auth/react";
 import { VscHeart, VscHeartFilled } from "react-icons/vsc";
+import { IconHoverEffect } from "./IconHoverEffect";
+import { api } from "~/utils/api";
+import { LoadingSpinner } from "./LoadingSpinner";
 
 type Tweet = {
   id: string;
@@ -17,7 +20,7 @@ type Tweet = {
 type InfiniTweetListProps = {
   isLoading: boolean;
   isError: boolean;
-  hasMore: boolean;
+  hasMore: boolean | undefined;
   fetchNewTweets: () => Promise<unknown>;
   tweets?: Tweet[];
 };
@@ -27,9 +30,9 @@ export function InfiniteTweetList({
   isLoading,
   isError,
   fetchNewTweets,
-  hasMore,
+  hasMore = false,
 }: InfiniTweetListProps) {
-  if (isLoading) return <h1>loading...</h1>;
+  if (isLoading) return <LoadingSpinner />;
   if (isError) return <h1>Error...</h1>;
   if (tweets == null || tweets.length === 0) {
     return (
@@ -43,7 +46,7 @@ export function InfiniteTweetList({
         dataLength={tweets.length}
         next={fetchNewTweets}
         hasMore={hasMore}
-        loader={"Loading..."}
+        loader={<LoadingSpinner />}
       >
         {tweets.map((tweet) => {
           return <TweetCard key={tweet.id} {...tweet} />;
@@ -65,6 +68,44 @@ function TweetCard({
   likeCount,
   likedByMe,
 }: Tweet) {
+  const trpcUtils = api.useContext();
+  const toggleLike = api.tweet.toggleLike.useMutation({
+    onSuccess: ({ addedLike }) => {
+      const updateData: Parameters<
+        typeof trpcUtils.tweet.infiniteFeed.setInfiniteData
+      >[1] = (oldData) => {
+        if (oldData == null) {
+          return;
+        }
+
+        const countModifier = addedLike ? 1 : -1;
+
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page) => {
+            return {
+              ...page,
+              tweets: page.tweets.map((tweet) => {
+                if (tweet.id === id) {
+                  return {
+                    ...tweet,
+                    likeCount: tweet.likeCount + countModifier,
+                    likedByMe: addedLike,
+                  };
+                }
+                return tweet;
+              }),
+            };
+          }),
+        };
+      };
+      trpcUtils.tweet.infiniteFeed.setInfiniteData({}, updateData);
+    },
+  });
+
+  function handleToggleLike() {
+    toggleLike.mutate({ id });
+  }
   return (
     <li key={id} className="flex gap-4 border-b px-4 py-4">
       <Link href={`/profiles/${user.id}`}>
@@ -84,18 +125,30 @@ function TweetCard({
           </span>
         </div>
         <p className="whitspace-prep-wrap">{content}</p>
-        <HeartButton likedByMe={likedByMe} likeCount={likeCount} />
+        <HeartButton
+          onClick={handleToggleLike}
+          isLoading={toggleLike.isLoading}
+          likedByMe={likedByMe}
+          likeCount={likeCount}
+        />
       </div>
     </li>
   );
 }
 
 type HeartButtonProps = {
+  onClick: () => void;
+  isLoading: boolean;
   likedByMe: boolean;
   likeCount: number;
 };
 
-function HeartButton({ likedByMe, likeCount }: HeartButtonProps) {
+function HeartButton({
+  isLoading,
+  onClick,
+  likedByMe,
+  likeCount,
+}: HeartButtonProps) {
   const session = useSession();
   const HeartIcon = likedByMe ? VscHeartFilled : VscHeart;
   if (session.status !== "authenticated") {
@@ -107,6 +160,25 @@ function HeartButton({ likedByMe, likeCount }: HeartButtonProps) {
     );
   }
   return (
-    <button className="mb-1 mt-1 flex items-center gap-3 self-start"></button>
+    <button
+      disabled={isLoading}
+      onClick={onClick}
+      className={`transition-colors duration-200 ${
+        likedByMe
+          ? "text-red-500"
+          : "text-gray-500 hover:text-red-500 focus-visible:text-red-500"
+      } group -ml-2 flex items-center gap-1 self-start`}
+    >
+      <IconHoverEffect red>
+        <HeartIcon
+          className={`transition-colors duration-200 ${
+            likedByMe
+              ? "fill-red-500"
+              : "fill-gray-500 group-hover:fill-red-500 group-focus-visible:fill-red-500"
+          }`}
+        />
+      </IconHoverEffect>
+      <span>{likeCount}</span>
+    </button>
   );
 }
